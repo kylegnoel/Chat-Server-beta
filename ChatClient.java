@@ -1,10 +1,12 @@
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.net.ConnectException;
 import java.net.Socket;
+import java.net.UnknownHostException;
+import java.util.Scanner;
 
 /**
- *
  * [Add your documentation here]
  *
  * @author your name and section
@@ -18,6 +20,8 @@ final class ChatClient {
     private final String server;
     private final String username;
     private final int port;
+
+    static Scanner scan = new Scanner(System.in);
 
     private ChatClient(String server, int port, String username) {
         this.server = server;
@@ -85,32 +89,93 @@ final class ChatClient {
      */
     public static void main(String[] args) {
         // Get proper arguments and override defaults
+        String serverAddress = "";
+        int portNumber = 0;
+        String username = "";
+        if (args.length == 0) {
+            serverAddress = "localhost";
+            portNumber = 1500;
+            username = "Anonymous";
+        } else if (args.length == 1) {
+            username = args[0];
+            serverAddress = "localhost";
+            portNumber = 1500;
+        } else if (args.length == 2) {
+            username = args[0];
+            portNumber = Integer.parseInt(args[1]);
+            serverAddress = "localhost";
+        } else if (args.length == 3) {
+            username = args[0];
+            portNumber = Integer.parseInt(args[1]);
+            serverAddress = args[2];
+        }
+
+        boolean validUsername = ChatServer.isValidUsername(username);
+        System.out.println(validUsername);
+
+        if (!validUsername) {
+            System.out.println("Username is already in use.");
+            return;
+        }
 
         // Create your client and start it
-        ChatClient client = new ChatClient("localhost", 1500, "CS 180 Student");
+        ChatClient client = new ChatClient(serverAddress, portNumber, username);
         client.start();
 
         // Send an empty message to the server
-        client.sendMessage(new ChatMessage());
+        String s = String.format("%s joined the server", username);
+        client.sendMessage(new ChatMessage(s, 0));
     }
 
 
-   /**
-    * This is a private class inside of the ChatClient
-    * It will be responsible for listening for messages from the ChatServer.
-    * ie: When other clients send messages, the server will relay it to the client.
-    *
-    * @author your name and section
-    * @version date
-    */
+    /**
+     * This is a private class inside of the ChatClient
+     * It will be responsible for listening for messages from the ChatServer.
+     * ie: When other clients send messages, the server will relay it to the client.
+     *
+     * @author your name and section
+     * @version date
+     */
     private final class ListenFromServer implements Runnable {
+        boolean loop1 = true;
+
         public void run() {
-            try {
-                String msg = (String) sInput.readObject();
-                System.out.print(msg);
-            } catch (IOException | ClassNotFoundException e) {
-                e.printStackTrace();
+            Runnable r = new WriteThread();
+            Thread t = new Thread(r);
+            t.start();
+            while (t.isAlive()) {
+                try {
+                    String msg = (String) sInput.readObject();
+                    System.out.println(msg);
+
+                } catch (IOException | ClassNotFoundException e) {
+                    loop1 = false;
+                }
+            }
+        }
+    }
+
+    private final class WriteThread implements Runnable {
+
+        @Override
+        public void run() {
+            while (true) {
+                String input = scan.nextLine();
+                if (input.equals("/logout")) {
+                    try {
+                        sendMessage(new ChatMessage(input, 1));
+                        sInput.close();
+                        sOutput.close();
+                        return;
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+
+                } else {
+                    sendMessage(new ChatMessage(input, 0));
+                }
             }
         }
     }
 }
+
