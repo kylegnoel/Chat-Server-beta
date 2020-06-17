@@ -1,16 +1,15 @@
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-import java.net.ConnectException;
 import java.net.Socket;
-import java.net.UnknownHostException;
+import java.util.NoSuchElementException;
 import java.util.Scanner;
 
 /**
- * [Add your documentation here]
+ * Creates clients to join the chat server.
  *
- * @author your name and section
- * @version date
+ * @author [Sole author] Shen Wei Leong L19
+ * @version 4/24/2020
  */
 final class ChatClient {
     private ObjectInputStream sInput;
@@ -20,6 +19,7 @@ final class ChatClient {
     private final String server;
     private final String username;
     private final int port;
+
 
     static Scanner scan = new Scanner(System.in);
 
@@ -37,7 +37,8 @@ final class ChatClient {
         try {
             socket = new Socket(server, port);
         } catch (IOException e) {
-            e.printStackTrace();
+            System.out.println("Server is not running");
+            return false;
         }
 
         // Create your input and output streams
@@ -69,7 +70,9 @@ final class ChatClient {
      */
     private void sendMessage(ChatMessage msg) {
         try {
-            sOutput.writeObject(msg);
+            if (!socket.isClosed()) {
+                sOutput.writeObject(msg);
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -110,21 +113,14 @@ final class ChatClient {
             serverAddress = args[2];
         }
 
-        boolean validUsername = ChatServer.isValidUsername(username);
-        System.out.println(validUsername);
-
-        if (!validUsername) {
-            System.out.println("Username is already in use.");
-            return;
-        }
-
         // Create your client and start it
         ChatClient client = new ChatClient(serverAddress, portNumber, username);
-        client.start();
 
-        // Send an empty message to the server
-        String s = String.format("%s joined the server", username);
-        client.sendMessage(new ChatMessage(s, 0));
+        client.start();
+//        // Send an empty message to the server
+//        String s = String.format("%s joined the server", username);
+//        client.sendMessage(new ChatMessage(s, 0));
+
     }
 
 
@@ -133,49 +129,98 @@ final class ChatClient {
      * It will be responsible for listening for messages from the ChatServer.
      * ie: When other clients send messages, the server will relay it to the client.
      *
-     * @author your name and section
-     * @version date
+     * @author [Sole author] Shen Wei Leong L19
+     * @version 4/24/2020
      */
     private final class ListenFromServer implements Runnable {
-        boolean loop1 = true;
-
         public void run() {
             Runnable r = new WriteThread();
             Thread t = new Thread(r);
             t.start();
-            while (t.isAlive()) {
+            while (!socket.isClosed()) {
                 try {
                     String msg = (String) sInput.readObject();
                     System.out.println(msg);
-
+                    if (msg.equals("Username is already in use.")) {
+                        sInput.close();
+                        sOutput.close();
+                        socket.close();
+                    }
                 } catch (IOException | ClassNotFoundException e) {
-                    loop1 = false;
+                    try {
+                        sInput.close();
+                        sOutput.close();
+                        socket.close();
+
+                    } catch (IOException ex) {
+                        ex.printStackTrace();
+                    }
+                    return;
                 }
             }
         }
+
     }
+    /**
+     * This is a private class inside of the ChatClient
+     * It will be responsible for listening for messages from the ChatServer.
+     * ie: When other clients send messages, the server will relay it to the client.
+     *
+     * @author [Sole author] Shen Wei Leong L19
+     * @version 4/24/2020
+     */
 
     private final class WriteThread implements Runnable {
 
         @Override
         public void run() {
-            while (true) {
-                String input = scan.nextLine();
-                if (input.equals("/logout")) {
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            while (!socket.isClosed()) {
+                String input = "";
+                String cmd = "";
+                try {
+                    input = scan.nextLine();
+                    cmd = input.split(" ")[0];
+                } catch (NoSuchElementException e) {
+                    System.out.println("Force quited.");
+                }
+                if (cmd.equals("/logout")) {
                     try {
                         sendMessage(new ChatMessage(input, 1));
                         sInput.close();
                         sOutput.close();
-                        return;
+                        socket.close();
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
 
+                } else if (cmd.equals("/msg")) {
+                    try {
+                        String recipient = input.split(" ")[1];
+                        if (recipient.equals(username)) {
+                            System.out.println("You cannot send a dm to your self!");
+                        } else {
+
+                            String msg = input.substring(cmd.length() + recipient.length() + 2);
+                            sendMessage(new ChatMessage(msg, 2, recipient));
+
+                        }
+                    } catch (StringIndexOutOfBoundsException | ArrayIndexOutOfBoundsException e) {
+                        System.out.println("Invalid command.");
+                    }
+
+                } else if (cmd.equals("/list")) {
+                    sendMessage(new ChatMessage(cmd, 3));
                 } else {
                     sendMessage(new ChatMessage(input, 0));
                 }
             }
         }
+
     }
 }
 
